@@ -154,6 +154,11 @@ button:hover{background:#28aaff}
 <script type="module">
 import * as THREE from "three";
 
+ import {
+  connectToGame,
+  sendPosition,
+  disconnectFromGame
+} from "./network.js";
 const game=document.getElementById("game");
 const menu=document.getElementById("menu");
 const hud=document.getElementById("hud");
