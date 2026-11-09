@@ -476,6 +476,14 @@ function endGame(won){
 
 function animate(){
  requestAnimationFrame(animate);
+ // SEND OUR ROBOT POSITION TO THE MULTIPLAYER SERVER
+if (player) {
+  sendPosition(
+    player.position.x,
+    player.position.z,
+    player.rotation.y
+  );
+}
  if(!running||!scene)return;
 
  if(gameOver){
