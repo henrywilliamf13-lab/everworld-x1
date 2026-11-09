@@ -165,6 +165,73 @@ const hud=document.getElementById("hud");
 
 let scene,camera,renderer,player;
 let enemies=[],shots=[],obstacles=[];
+ // MULTIPLAYER PLAYER TRACKING
+const remotePlayers = new Map();
+
+function createRemotePlayer(player) {
+  if (!player || !player.id || remotePlayers.has(player.id)) return;
+
+  const robot = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 1.2, 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x168bff })
+  );
+
+  body.position.y = 1;
+  robot.add(body);
+
+  const head = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 0.5, 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x55bbff })
+  );
+
+  head.position.y = 1.85;
+  robot.add(head);
+
+  robot.position.set(player.x || 0, 0, player.z || 0);
+  scene.add(robot);
+
+  remotePlayers.set(player.id, robot);
+ // LISTEN FOR OTHER PLAYERS
+window.addEventListener("ew:ready", event => {
+  const data = event.detail;
+  (data.players || []).forEach(player => {
+    if (player.id !== data.id) createRemotePlayer(player);
+  });
+});
+
+window.addEventListener("ew:joined", event => {
+  createRemotePlayer(event.detail);
+});
+
+window.addEventListener("ew:moved", event => {
+  updateRemotePlayer(event.detail);
+});
+
+window.addEventListener("ew:left", event => {
+  removeRemotePlayer(event.detail);
+});
+}
+
+function updateRemotePlayer(player) {
+  const robot = remotePlayers.get(player.id);
+  if (!robot) {
+    createRemotePlayer(player);
+    return;
+  }
+
+  robot.position.set(player.x || 0, 0, player.z || 0);
+  robot.rotation.y = player.rotation || 0;
+}
+
+function removeRemotePlayer(player) {
+  const robot = remotePlayers.get(player.id);
+  if (!robot) return;
+
+  scene.remove(robot);
+  remotePlayers.delete(player.id);
+}
 let keys={};
 let running=false;
 let firstPerson=false;
