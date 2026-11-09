@@ -602,6 +602,8 @@ window.addEventListener("resize",()=>{
 
 document.getElementById("start").onclick=()=>{
  createWorld();
+ const playerName = prompt("Choose your robot name:") || "Player";
+connectToGame(playerName, selectedMap);
  document.getElementById("missionName").textContent=
   maps[selectedMap].name;
  menu.style.display="none";
