@@ -1,0 +1,536 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EVERWORLD X1</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:#050914;color:white;
+ font-family:Arial,sans-serif;overflow:hidden
+}
+#game{position:fixed;inset:0}
+canvas{display:block}
+#hud{
+ position:fixed;inset:0;pointer-events:none;
+ padding:18px;display:none
+}
+.panel{
+ background:#091526dd;border:1px solid #168bff;
+ padding:12px 17px;border-radius:12px;
+ box-shadow:0 0 18px #007bff44
+}
+#top{display:flex;justify-content:space-between;gap:10px}
+#health{color:#42a5ff;font-weight:bold}
+#missionInfo{position:absolute;top:100px;left:18px}
+#controls{
+ position:absolute;bottom:18px;left:18px;
+ font-size:13px;line-height:1.8
+}
+#crosshair{
+ position:absolute;left:50%;top:50%;
+ transform:translate(-50%,-50%);
+ font-size:25px;color:#54c6ff
+}
+#message{
+ position:absolute;top:45%;width:100%;
+ text-align:center;font-size:27px;font-weight:bold;
+ text-shadow:0 0 15px #168bff
+}
+#menu{
+ position:fixed;inset:0;z-index:5;
+ display:flex;align-items:center;justify-content:center;
+ background:radial-gradient(ellipse,#142c4d,#030712 75%);
+ overflow:auto;padding:20px
+}
+.card{
+ width:min(650px,100%);padding:30px;
+ border:1px solid #168bff;border-radius:20px;
+ background:#071426f5;box-shadow:0 0 45px #087bff44;
+ text-align:center
+}
+h1{font-size:clamp(35px,8vw,65px);margin:5px;color:#46aaff}
+.subtitle{color:#9fcaff;letter-spacing:5px}
+button{
+ background:#087de0;color:white;border:0;
+ padding:13px 20px;border-radius:9px;
+ cursor:pointer;font-size:15px;font-weight:bold;
+ margin:6px
+}
+button:hover{background:#28aaff}
+.missions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.missions button{background:#142d4b;border:1px solid #287bc1}
+.missions button.selected{background:#0867b8}
+.small{font-size:13px;color:#a9c5e5;line-height:1.7}
+#cameraButton{
+ position:absolute;right:18px;bottom:20px;
+ pointer-events:auto
+}
+@media(max-width:500px){
+ .missions{grid-template-columns:1fr}
+ #controls{font-size:11px}
+}
+</style>
+</head>
+
+<body>
+<div id="game"></div>
+
+<div id="menu">
+ <div class="card">
+  <div class="subtitle">MULTIPLAYER SCI-FI UNIVERSE</div>
+  <h1>EVERWORLD X1</h1>
+  <p>ROBOT UPRISING</p>
+  <p class="small">
+   BLUE TEAM: HUMAN PLAYER<br>
+   RED TEAM: ARTIFICIAL INTELLIGENCE
+  </p>
+
+  <h3>SELECT YOUR MISSION</h3>
+  <div class="missions">
+   <button class="selected" data-map="city">🏙️ CITY ASSAULT</button>
+   <button data-map="desert">🏜️ DESERT BASE</button>
+   <button data-map="lab">🧪 SECRET LAB</button>
+  </div>
+
+  <p class="small" id="missionDescription">
+   Defeat the red robots and secure the city.
+  </p>
+
+  <button id="start" style="width:85%;font-size:19px">
+   ENTER THE WORLD
+  </button>
+
+  <p class="small">
+   WASD = Move | Mouse = Aim<br>
+   CLICK = Fire | V = Switch Camera<br>
+   ESC = Release Mouse
+  </p>
+ </div>
+</div>
+
+<div id="hud">
+ <div id="top">
+  <div class="panel">
+   <b>EVERWORLD X1</b><br>
+   <span id="health">HEALTH: 100</span>
+  </div>
+  <div class="panel">
+   <span id="score">ROBOTS DEFEATED: 0</span><br>
+   <span id="remaining">ENEMIES: 5</span>
+  </div>
+ </div>
+
+ <div id="missionInfo" class="panel">
+  <b id="missionName">CITY ASSAULT</b><br>
+  <span class="small">OBJECTIVE: DEFEAT ALL RED ROBOTS</span>
+ </div>
+
+ <div id="crosshair">+</div>
+ <div id="message"></div>
+
+ <div id="controls" class="panel">
+  W A S D — MOVE<br>
+  MOUSE — LOOK AROUND<br>
+  LEFT CLICK — ENERGY BLASTER<br>
+  V — CHANGE CAMERA<br>
+  ESC — RELEASE MOUSE
+ </div>
+
+ <button id="cameraButton">CAMERA: THIRD PERSON</button>
+</div>
+
+<script type="importmap">
+{
+ "imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+ }
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+
+const game=document.getElementById("game");
+const menu=document.getElementById("menu");
+const hud=document.getElementById("hud");
+
+let scene,camera,renderer,player;
+let enemies=[],shots=[],obstacles=[];
+let keys={};
+let running=false;
+let firstPerson=false;
+let yaw=0,pitch=0;
+let health=100,score=0;
+let selectedMap="city";
+let lastShot=0;
+let gameOver=false;
+
+const maps={
+ city:{
+  name:"CITY ASSAULT",
+  color:0x25344a,
+  ground:0x172538,
+  description:"Defend the futuristic city from the red robot army."
+ },
+ desert:{
+  name:"DESERT BASE",
+  color:0x80603b,
+  ground:0x79603d,
+  description:"Fight through a desert military installation."
+ },
+ lab:{
+  name:"SECRET LAB",
+  color:0x173b48,
+  ground:0x142b39,
+  description:"Enter a secret laboratory full of enemy robots."
+ }
+};
+
+document.querySelectorAll("[data-map]").forEach(button=>{
+ button.onclick=()=>{
+  selectedMap=button.dataset.map;
+  document.querySelectorAll("[data-map]").forEach(b=>b.classList.remove("selected"));
+  button.classList.add("selected");
+  document.getElementById("missionDescription").textContent=
+   maps[selectedMap].description;
+ };
+});
+
+function material(color,emissive=0x000000){
+ return new THREE.MeshStandardMaterial({
+  color,
+  roughness:.55,
+  metalness:.45,
+  emissive,
+  emissiveIntensity:.6
+ });
+}
+
+function cube(x,y,z,sx,sy,sz,color){
+ const mesh=new THREE.Mesh(
+  new THREE.BoxGeometry(sx,sy,sz),
+  material(color)
+ );
+ mesh.position.set(x,y,z);
+ mesh.castShadow=true;
+ mesh.receiveShadow=true;
+ scene.add(mesh);
+ return mesh;
+}
+
+function makeRobot(color,isPlayer=false){
+ const robot=new THREE.Group();
+ const bodyMat=material(color,color);
+
+ const body=new THREE.Mesh(
+  new THREE.BoxGeometry(.9,1.15,.55),bodyMat
+ );
+ body.position.y=1.25;
+ robot.add(body);
+
+ const head=new THREE.Mesh(
+  new THREE.BoxGeometry(.7,.55,.65),bodyMat
+ );
+ head.position.y=2.1;
+ robot.add(head);
+
+ const eye=new THREE.Mesh(
+  new THREE.BoxGeometry(.4,.09,.08),
+  material(isPlayer?0x55ccff:0xff2020,
+           isPlayer?0x0088ff:0xff0000)
+ );
+ eye.position.set(0,2.13,-.34);
+ robot.add(eye);
+
+ for(const side of [-1,1]){
+  const arm=new THREE.Mesh(
+   new THREE.BoxGeometry(.25,.9,.3),bodyMat
+  );
+  arm.position.set(side*.62,1.3,0);
+  robot.add(arm);
+
+  const leg=new THREE.Mesh(
+   new THREE.BoxGeometry(.3,.8,.4),bodyMat
+  );
+  leg.position.set(side*.25,.4,0);
+  robot.add(leg);
+ }
+
+ robot.userData.isPlayer=isPlayer;
+ scene.add(robot);
+ return robot;
+}
+
+function createWorld(){
+ scene=new THREE.Scene();
+ scene.background=new THREE.Color(maps[selectedMap].color);
+ scene.fog=new THREE.Fog(maps[selectedMap].color,25,90);
+
+ camera=new THREE.PerspectiveCamera(
+  75,innerWidth/innerHeight,.1,200
+ );
+
+ renderer=new THREE.WebGLRenderer({antialias:true});
+ renderer.setSize(innerWidth,innerHeight);
+ renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+ renderer.shadowMap.enabled=true;
+ game.innerHTML="";
+ game.appendChild(renderer.domElement);
+
+ scene.add(new THREE.HemisphereLight(0x9dcaff,0x152033,2));
+
+ const light=new THREE.DirectionalLight(0xffffff,2);
+ light.position.set(10,20,10);
+ light.castShadow=true;
+ scene.add(light);
+
+ const ground=new THREE.Mesh(
+  new THREE.PlaneGeometry(100,100),
+  material(maps[selectedMap].ground)
+ );
+ ground.rotation.x=-Math.PI/2;
+ ground.receiveShadow=true;
+ scene.add(ground);
+
+ const grid=new THREE.GridHelper(100,50,0x2679ae,0x233b53);
+ grid.position.y=.02;
+ scene.add(grid);
+
+ obstacles=[];
+ for(let i=0;i<18;i++){
+  const x=(Math.random()-.5)*65;
+  const z=(Math.random()-.5)*65;
+  const height=2+Math.random()*5;
+
+  const building=cube(
+   x,height/2,z,
+   3+Math.random()*3,height,
+   3+Math.random()*3,
+   selectedMap==="desert"?0x806b50:
+   selectedMap==="lab"?0x23606a:0x354b65
+  );
+  obstacles.push(building);
+ }
+
+ player=makeRobot(0x087dff,true);
+ player.position.set(0,0,12);
+
+ enemies=[];
+ shots=[];
+ health=100;
+ score=0;
+ gameOver=false;
+
+ for(let i=0;i<5;i++) spawnEnemy();
+
+ updateHUD();
+}
+
+function spawnEnemy(){
+ const enemy=makeRobot(0xff1717);
+ enemy.position.set(
+  (Math.random()-.5)*45,
+  0,
+  -10-Math.random()*25
+ );
+ enemies.push(enemy);
+}
+
+function updateHUD(){
+ document.getElementById("health").textContent=
+  "HEALTH: "+health;
+ document.getElementById("score").textContent=
+  "ROBOTS DEFEATED: "+score;
+ document.getElementById("remaining").textContent=
+  "ENEMIES: "+enemies.length;
+}
+
+function shoot(){
+ if(!running||gameOver)return;
+ const now=performance.now();
+ if(now-lastShot<300)return;
+ lastShot=now;
+
+ const direction=new THREE.Vector3(
+  -Math.sin(yaw)*Math.cos(pitch),
+  Math.sin(pitch),
+  -Math.cos(yaw)*Math.cos(pitch)
+ ).normalize();
+
+ const start=player.position.clone();
+ start.y+=firstPerson?1.8:1.5;
+
+ const bullet=new THREE.Mesh(
+  new THREE.SphereGeometry(.12,10,10),
+  new THREE.MeshBasicMaterial({color:0x39caff})
+ );
+
+ bullet.position.copy(start);
+ scene.add(bullet);
+
+ shots.push({
+  mesh:bullet,
+  velocity:direction.multiplyScalar(1.2),
+  life:70
+ });
+}
+
+function switchCamera(){
+ firstPerson=!firstPerson;
+ document.getElementById("cameraButton").textContent=
+  "CAMERA: "+(firstPerson?"FIRST PERSON":"THIRD PERSON");
+}
+
+document.getElementById("cameraButton").onclick=switchCamera;
+
+function endGame(won){
+ if(gameOver)return;
+ gameOver=true;
+ document.getElementById("message").textContent=
+  won?"MISSION COMPLETE!":"MISSION FAILED!";
+ setTimeout(()=>{
+  if(confirm(won?"MISSION COMPLETE! Play again?":"Mission failed. Try again?")){
+   menu.style.display="flex";
+   hud.style.display="none";
+   running=false;
+   document.exitPointerLock?.();
+  }
+ },500);
+}
+
+function animate(){
+ requestAnimationFrame(animate);
+ if(!running||!scene)return;
+
+ if(gameOver){
+  renderer.render(scene,camera);
+  return;
+ }
+
+ const forward=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
+ const right=new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
+ const movement=new THREE.Vector3();
+
+ if(keys.KeyW)movement.add(forward);
+ if(keys.KeyS)movement.sub(forward);
+ if(keys.KeyD)movement.add(right);
+ if(keys.KeyA)movement.sub(right);
+
+ if(movement.length()>0){
+  movement.normalize().multiplyScalar(.16);
+  player.position.add(movement);
+ }
+
+ player.position.x=THREE.MathUtils.clamp(player.position.x,-47,47);
+ player.position.z=THREE.MathUtils.clamp(player.position.z,-47,47);
+ player.rotation.y=yaw;
+
+ if(firstPerson){
+  camera.position.set(
+   player.position.x,player.position.y+2.0,player.position.z
+  );
+  camera.rotation.order="YXZ";
+  camera.rotation.set(pitch,yaw,0);
+ }else{
+  const offset=new THREE.Vector3(
+   Math.sin(yaw)*7,4,Math.cos(yaw)*7
+  );
+  camera.position.copy(player.position).add(offset);
+  camera.position.y+=1;
+  camera.lookAt(player.position.x,1.5,player.position.z);
+ }
+
+ // Enemy AI
+ enemies.forEach(enemy=>{
+  const direction=new THREE.Vector3()
+   .subVectors(player.position,enemy.position);
+  direction.y=0;
+  const distance=direction.length();
+
+  if(distance>2.2){
+   direction.normalize();
+   enemy.position.add(direction.multiplyScalar(.045));
+   enemy.rotation.y=Math.atan2(-direction.x,-direction.z);
+  }else if(Math.random()<.015){
+   health-=3;
+   updateHUD();
+   if(health<=0)endGame(false);
+  }
+ });
+
+ // Energy projectiles
+ for(let i=shots.length-1;i>=0;i--){
+  const shot=shots[i];
+  shot.mesh.position.add(shot.velocity);
+  shot.life--;
+
+  let hit=false;
+  for(let j=enemies.length-1;j>=0;j--){
+   if(shot.mesh.position.distanceTo(
+    enemies[j].position.clone().add(new THREE.Vector3(0,1,0))
+   )<1.1){
+    scene.remove(enemies[j]);
+    enemies.splice(j,1);
+    score++;
+    updateHUD();
+    hit=true;
+    if(enemies.length===0)endGame(true);
+    break;
+   }
+  }
+
+  if(hit||shot.life<=0){
+   scene.remove(shot.mesh);
+   shots.splice(i,1);
+  }
+ }
+
+ renderer.render(scene,camera);
+}
+
+window.addEventListener("keydown",e=>{
+ keys[e.code]=true;
+ if(e.code==="KeyV"&&!e.repeat)switchCamera();
+});
+window.addEventListener("keyup",e=>keys[e.code]=false);
+
+window.addEventListener("mousemove",e=>{
+ if(document.pointerLockElement&&running){
+  yaw-=e.movementX*.0025;
+  pitch-=e.movementY*.0025;
+  pitch=THREE.MathUtils.clamp(pitch,-1,1);
+ }
+});
+
+window.addEventListener("mousedown",()=>{
+ if(running){
+  renderer.domElement.requestPointerLock?.();
+  shoot();
+ }
+});
+
+window.addEventListener("resize",()=>{
+ if(!camera||!renderer)return;
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+
+document.getElementById("start").onclick=()=>{
+ createWorld();
+ document.getElementById("missionName").textContent=
+  maps[selectedMap].name;
+ menu.style.display="none";
+ hud.style.display="block";
+ document.getElementById("message").textContent="";
+ running=true;
+ animate();
+};
+
+</script>
+</body>
+</html>
